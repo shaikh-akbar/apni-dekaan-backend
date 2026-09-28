@@ -1,0 +1,380 @@
+// Apni Dukaan — Customer Loyalty & Rewards
+// Database: MySQL 8 / MariaDB 10.6+
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────── Access control ───────────────────────────────
+
+model Role {
+  id          Int              @id @default(autoincrement())
+  key         String           @unique @db.VarChar(50) // SUPER_ADMIN, STAFF, ...
+  name        String           @db.VarChar(100)
+  description String?          @db.VarChar(255)
+  isSystem    Boolean          @default(false) @map("is_system") // system roles cannot be deleted
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  permissions RolePermission[]
+  admins      AdminUser[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          Int              @id @default(autoincrement())
+  key         String           @unique @db.VarChar(80) // e.g. purchases.create
+  name        String           @db.VarChar(120)
+  group       String           @db.VarChar(50)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       Int        @map("role_id")
+  permissionId Int        @map("permission_id")
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model AdminUser {
+  id                 Int       @id @default(autoincrement())
+  name               String    @db.VarChar(120)
+  email              String    @unique @db.VarChar(190)
+  passwordHash       String    @map("password_hash") @db.VarChar(255)
+  roleId             Int       @map("role_id")
+  isActive           Boolean   @default(true) @map("is_active")
+  mustChangePassword Boolean   @default(false) @map("must_change_password")
+  tokenVersion       Int       @default(0) @map("token_version") // bump to invalidate sessions
+  lastLoginAt        DateTime? @map("last_login_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  role                Role                 @relation(fields: [roleId], references: [id])
+  purchasesCreated    CustomerPurchase[]   @relation("PurchaseCreatedBy")
+  purchasesUpdated    CustomerPurchase[]   @relation("PurchaseUpdatedBy")
+  purchasesCancelled  CustomerPurchase[]   @relation("PurchaseCancelledBy")
+  loyaltyTransactions LoyaltyTransaction[]
+  rewardsProcessed    CustomerReward[]
+  customersCreated    Customer[]
+  auditLogs           AuditLog[]
+
+  @@index([roleId])
+  @@map("admin_users")
+}
+
+// ─────────────────────────────── Customers ───────────────────────────────
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum CardType {
+  SILVER
+  GOLD
+}
+
+model Customer {
+  id               Int       @id @default(autoincrement())
+  customerCode     String?   @unique @map("customer_code") @db.VarChar(20) // human readable, e.g. AD000123
+  fullName         String    @map("full_name") @db.VarChar(120)
+  mobile           String    @unique @db.VarChar(15)
+  email            String?   @unique @db.VarChar(190) // login codes are emailed here
+  dateOfBirth      DateTime? @map("date_of_birth") @db.Date
+  gender           Gender?
+  address          String?   @db.VarChar(500)
+  city             String?   @db.VarChar(100)
+  pincode          String?   @db.VarChar(10)
+  profilePhoto     String?   @map("profile_photo") @db.VarChar(255)
+  registrationDate DateTime  @default(now()) @map("registration_date")
+  isActive         Boolean   @default(true) @map("is_active")
+
+  // Denormalised loyalty state — ONLY mutated by LoyaltyService inside a transaction
+  silverCount      Int       @default(0) @map("silver_count")
+  cardType         CardType  @default(SILVER) @map("card_type")
+  totalSpent       Decimal   @default(0) @map("total_spent") @db.Decimal(14, 2)
+  totalPurchases   Int       @default(0) @map("total_purchases") // active (non-cancelled) transactions
+  eligiblePurchases Int      @default(0) @map("eligible_purchases")
+
+  createdById      Int?      @map("created_by_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  createdBy           AdminUser?           @relation(fields: [createdById], references: [id])
+  purchases           CustomerPurchase[]
+  loyaltyTransactions LoyaltyTransaction[]
+  rewards             CustomerReward[]
+  membershipCard      MembershipCard?
+
+  @@index([fullName])
+  @@index([cardType])
+  @@index([silverCount])
+  @@index([registrationDate])
+  @@map("customers")
+}
+
+model OtpCode {
+  id         Int      @id @default(autoincrement())
+  mobile     String   @db.VarChar(15)
+  purpose    String   @db.VarChar(20) // LOGIN | REGISTER
+  codeHash   String   @map("code_hash") @db.VarChar(255)
+  attempts   Int      @default(0)
+  consumed   Boolean  @default(false)
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([mobile, purpose, createdAt])
+  @@map("otp_codes")
+}
+
+// ─────────────────────────────── Purchases ───────────────────────────────
+
+enum PaymentMethod {
+  CASH
+  UPI
+  CARD
+  NET_BANKING
+  WALLET
+  OTHER
+}
+
+enum PurchaseStatus {
+  ACTIVE
+  CANCELLED
+}
+
+model CustomerPurchase {
+  id            Int            @id @default(autoincrement())
+  customerId    Int            @map("customer_id")
+  invoiceNumber String         @unique @map("invoice_number") @db.VarChar(50)
+  purchaseDate  DateTime       @map("purchase_date")
+  totalAmount   Decimal        @map("total_amount") @db.Decimal(12, 2)
+  discount      Decimal        @default(0) @db.Decimal(12, 2)
+  finalAmount   Decimal        @map("final_amount") @db.Decimal(12, 2)
+  paymentMethod PaymentMethod  @map("payment_method")
+  isEligible    Boolean        @default(true) @map("is_eligible") // admin may exclude a purchase
+  silverCountEarned Int        @default(0) @map("silver_count_earned")
+  // Rule snapshot at time of creation — edits recompute with these, never with current settings
+  ruleMinAmount Decimal        @map("rule_min_amount") @db.Decimal(12, 2)
+  ruleMultiple  Boolean        @default(false) @map("rule_multiple")
+  notes         String?        @db.VarChar(1000)
+  status        PurchaseStatus @default(ACTIVE)
+  cancelReason  String?        @map("cancel_reason") @db.VarChar(500)
+  cancelledAt   DateTime?      @map("cancelled_at")
+  version       Int            @default(1) // optimistic concurrency for edits
+  createdById   Int            @map("created_by_id")
+  updatedById   Int?           @map("updated_by_id")
+  cancelledById Int?           @map("cancelled_by_id")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  customer    Customer             @relation(fields: [customerId], references: [id])
+  createdBy   AdminUser            @relation("PurchaseCreatedBy", fields: [createdById], references: [id])
+  updatedBy   AdminUser?           @relation("PurchaseUpdatedBy", fields: [updatedById], references: [id])
+  cancelledBy AdminUser?           @relation("PurchaseCancelledBy", fields: [cancelledById], references: [id])
+  items       PurchaseItem[]
+  loyaltyTransactions LoyaltyTransaction[]
+
+  @@index([customerId])
+  @@index([purchaseDate])
+  @@index([paymentMethod])
+  @@index([status])
+  @@map("customer_purchases")
+}
+
+model PurchaseItem {
+  id          Int      @id @default(autoincrement())
+  purchaseId  Int      @map("purchase_id")
+  productName String   @map("product_name") @db.VarChar(200)
+  quantity    Int
+  unitPrice   Decimal  @map("unit_price") @db.Decimal(12, 2)
+  lineTotal   Decimal  @map("line_total") @db.Decimal(12, 2)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  purchase CustomerPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseId])
+  @@map("purchase_items")
+}
+
+// ─────────────────────────────── Loyalty ledger ───────────────────────────────
+
+enum LoyaltyAction {
+  COUNT_ADDED
+  COUNT_REMOVED
+  COUNT_ADJUSTED
+  REWARD_UNLOCKED
+  REWARD_REVOKED
+  GOLD_UPGRADE
+  GOLD_DOWNGRADE
+}
+
+model LoyaltyTransaction {
+  id            Int           @id @default(autoincrement())
+  customerId    Int           @map("customer_id")
+  action        LoyaltyAction
+  delta         Int           @default(0)
+  previousCount Int           @map("previous_count")
+  newCount      Int           @map("new_count")
+  reason        String        @db.VarChar(255)
+  purchaseId    Int?          @map("purchase_id")
+  invoiceNumber String?       @map("invoice_number") @db.VarChar(50)
+  adminId       Int?          @map("admin_id")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  customer Customer          @relation(fields: [customerId], references: [id])
+  purchase CustomerPurchase? @relation(fields: [purchaseId], references: [id])
+  admin    AdminUser?        @relation(fields: [adminId], references: [id])
+
+  @@index([customerId, createdAt])
+  @@index([purchaseId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("loyalty_transactions")
+}
+
+// ─────────────────────────────── Rewards ───────────────────────────────
+
+enum RewardType {
+  GIFT
+  VOUCHER
+  DISCOUNT
+  SERVICE
+  OTHER
+}
+
+model Reward {
+  id            Int        @id @default(autoincrement())
+  name          String     @db.VarChar(150)
+  description   String?    @db.VarChar(1000)
+  requiredCount Int        @map("required_count")
+  rewardType    RewardType @default(GIFT) @map("reward_type")
+  rewardValue   Decimal?   @map("reward_value") @db.Decimal(12, 2)
+  image         String?    @db.VarChar(255)
+  isActive      Boolean    @default(true) @map("is_active")
+  startDate     DateTime?  @map("start_date")
+  endDate       DateTime?  @map("end_date")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  customerRewards CustomerReward[]
+
+  @@index([requiredCount])
+  @@index([isActive])
+  @@map("rewards")
+}
+
+enum CustomerRewardStatus {
+  AVAILABLE
+  CLAIMED
+  DELIVERED
+  CANCELLED // cancelled by admin — never re-unlocked automatically
+  REVOKED   // count fell below milestone before claim — re-activated if reached again
+}
+
+model CustomerReward {
+  id            Int                  @id @default(autoincrement())
+  customerId    Int                  @map("customer_id")
+  rewardId      Int                  @map("reward_id")
+  milestone     Int                  // snapshot of requiredCount at unlock time
+  status        CustomerRewardStatus @default(AVAILABLE)
+  unlockedAt    DateTime             @default(now()) @map("unlocked_at")
+  claimedAt     DateTime?            @map("claimed_at")
+  deliveredAt   DateTime?            @map("delivered_at")
+  cancelledAt   DateTime?            @map("cancelled_at")
+  processedById Int?                 @map("processed_by_id")
+  notes         String?              @db.VarChar(500)
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+
+  customer    Customer   @relation(fields: [customerId], references: [id])
+  reward      Reward     @relation(fields: [rewardId], references: [id])
+  processedBy AdminUser? @relation(fields: [processedById], references: [id])
+
+  // A customer can hold a given reward exactly once — DB-level guard against double claims
+  @@unique([customerId, rewardId])
+  @@index([rewardId])
+  @@index([status])
+  @@index([unlockedAt])
+  @@map("customer_rewards")
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model MembershipCard {
+  id          Int              @id @default(autoincrement())
+  customerId  Int              @unique @map("customer_id")
+  cardNumber  String           @unique @map("card_number") @db.VarChar(30)
+  cardType    CardType         @default(GOLD) @map("card_type")
+  status      MembershipStatus @default(ACTIVE)
+  upgradedAt  DateTime         @map("upgraded_at")
+  benefits    String?          @db.Text
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@map("membership_cards")
+}
+
+// ─────────────────────────────── Settings & audit ───────────────────────────────
+
+// Single-row table (id = 1)
+model LoyaltySettings {
+  id                  Int      @id @default(1)
+  programName         String   @default("Apni Dukaan Rewards") @map("program_name") @db.VarChar(120)
+  minPurchaseAmount   Decimal  @default(500) @map("min_purchase_amount") @db.Decimal(12, 2)
+  multipleCountsPerPurchase Boolean @default(false) @map("multiple_counts_per_purchase")
+  maxCountsPerPurchase Int     @default(10) @map("max_counts_per_purchase")
+  goldThreshold       Int      @default(100) @map("gold_threshold")
+  goldBenefits        String?  @map("gold_benefits") @db.Text
+  shopName            String   @default("Apni Dukaan") @map("shop_name") @db.VarChar(120)
+  shopLogo            String?  @map("shop_logo") @db.VarChar(255)
+  contactPhone        String?  @map("contact_phone") @db.VarChar(20)
+  contactEmail        String?  @map("contact_email") @db.VarChar(190)
+  contactAddress      String?  @map("contact_address") @db.VarChar(500)
+  currency            String   @default("INR") @db.VarChar(3)
+  currencySymbol      String   @default("₹") @map("currency_symbol") @db.VarChar(5)
+  updatedById         Int?     @map("updated_by_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("loyalty_settings")
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  adminId    Int?     @map("admin_id")
+  actorType  String   @map("actor_type") @db.VarChar(20) // ADMIN | CUSTOMER | SYSTEM
+  actorId    Int?     @map("actor_id")
+  action     String   @db.VarChar(80)
+  entity     String   @db.VarChar(50)
+  entityId   String?  @map("entity_id") @db.VarChar(50)
+  before     Json?
+  after      Json?
+  ip         String?  @db.VarChar(64)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  admin AdminUser? @relation(fields: [adminId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([adminId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
