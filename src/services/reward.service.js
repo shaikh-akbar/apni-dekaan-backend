@@ -114,7 +114,7 @@ export async function listClaims(f, page) {
   if (f.status) and.push({ status: f.status });
   if (f.rewardId) and.push({ rewardId: f.rewardId });
   if (f.customerId) and.push({ customerId: f.customerId });
-  if (f.q) and.push({ customer: { OR: [{ fullName: { contains: f.q } }, { mobile: { contains: f.q } }, { customerCode: { contains: f.q } }] } });
+  if (f.q) and.push({ customer: { OR: [{ fullName: { contains: f.q, mode: 'insensitive' } }, { mobile: { contains: f.q, mode: 'insensitive' } }, { customerCode: { contains: f.q, mode: 'insensitive' } }] } });
   if (f.from || f.to) and.push({ unlockedAt: { ...(f.from && { gte: f.from }), ...(f.to && { lte: f.to }) } });
   const where = and.length ? { AND: and } : {};
   const [items, total] = await Promise.all([

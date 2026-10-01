@@ -4,6 +4,7 @@
   "description": "Apni Dukaan — Customer Loyalty & Rewards API",
   "main": "src/server.js",
   "scripts": {
+    "build": "prisma generate",
     "dev": "nodemon --watch src src/server.js",
     "start": "node src/server.js",
     "db:migrate": "prisma migrate dev",
@@ -11,7 +12,8 @@
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force",
     "db:studio": "prisma studio",
-    "test": "node --test --test-concurrency=1 tests/"
+    "test": "node --test --test-concurrency=1 tests/",
+    "db:generate": "prisma generate"
   },
   "keywords": [
     "apni",

@@ -1,7 +1,7 @@
 // Integration test helpers. Tests run against DATABASE_URL from .env.test (a throwaway DB).
 process.env.NODE_ENV = 'test';
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import bcrypt from 'bcryptjs';
 import request from 'supertest';
 
@@ -13,25 +13,24 @@ const { PERMISSIONS, DEFAULT_STAFF_PERMISSIONS } = await import('../src/config/p
 export { prisma, env };
 export const app = createApp();
 
-if (!process.env.DATABASE_URL?.includes('_test')) {
+const testUrl = new URL(process.env.DATABASE_URL || 'postgresql://localhost/invalid');
+if (!['postgresql:', 'postgres:'].includes(testUrl.protocol) || !testUrl.pathname.endsWith('_test')) {
   throw new Error('Refusing to run tests: DATABASE_URL must point at a *_test database');
 }
 
+// Never let migrations use a production DIRECT_URL inherited from the shell.
+process.env.DIRECT_URL = process.env.DATABASE_URL;
 let prepared = false;
 /** Fresh schema + minimal fixtures (roles, admins, settings). */
 export async function resetDb() {
   if (!prepared) {
     // Non-destructive: creates the test DB if needed and applies pending migrations
-    execSync('npx prisma migrate deploy', { stdio: 'ignore', env: { ...process.env } });
+    execFileSync(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], {
+      stdio: 'pipe', windowsHide: true, env: { ...process.env },
+    });
     prepared = true;
   }
-  // Truncate in FK-safe order
-  await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
-  for (const t of ['audit_logs', 'loyalty_transactions', 'customer_rewards', 'membership_cards', 'purchase_items', 'customer_purchases',
-    'otp_codes', 'customers', 'rewards', 'loyalty_settings', 'role_permissions', 'admin_users', 'roles', 'permissions']) {
-    await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${t}`);
-  }
-  await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE audit_logs, loyalty_transactions, customer_rewards, membership_cards, purchase_items, customer_purchases, otp_codes, customers, rewards, loyalty_settings, role_permissions, admin_users, roles, permissions RESTART IDENTITY');
 
   await prisma.permission.createMany({ data: PERMISSIONS });
   const superRole = await prisma.role.create({ data: { key: 'SUPER_ADMIN', name: 'Super Admin', isSystem: true } });

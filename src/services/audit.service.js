@@ -34,7 +34,7 @@ export async function listAuditLogs({ entity, entityId, adminId, action, from, t
     ...(entity && { entity }),
     ...(entityId && { entityId: String(entityId) }),
     ...(adminId && { adminId }),
-    ...(action && { action: { contains: action } }),
+    ...(action && { action: { contains: action, mode: 'insensitive' } }),
     ...((from || to) && { createdAt: { ...(from && { gte: from }), ...(to && { lte: to }) } }),
   };
   const [items, total] = await Promise.all([

@@ -35,6 +35,16 @@ export const env = {
 export function assertEnv() {
   const problems = [];
   if (!process.env.DATABASE_URL) problems.push('DATABASE_URL is not set');
+  else {
+    try {
+      const databaseUrl = new URL(process.env.DATABASE_URL);
+      if (!['postgresql:', 'postgres:'].includes(databaseUrl.protocol)) {
+        problems.push('DATABASE_URL must use PostgreSQL; replace the old MySQL URL (see docs/supabase.md)');
+      }
+    } catch {
+      problems.push('DATABASE_URL must be a valid PostgreSQL connection URL');
+    }
+  }
   if (!env.jwtSecret || env.jwtSecret.length < 32) problems.push('JWT_SECRET must be at least 32 characters');
   if (env.isProd && env.jwtSecret.startsWith('change-me')) problems.push('JWT_SECRET still has the placeholder value');
   if (env.isProd && !env.cookieSecure) problems.push('COOKIE_SECURE must be true in production');

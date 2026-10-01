@@ -3,7 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import { env } from './config/env.js';
+import { assertEnv, env } from './config/env.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { apiLimiter } from './middleware/rateLimit.js';
 import routes from './routes/index.js';
@@ -46,3 +46,7 @@ export function createApp() {
   app.use(errorHandler);
   return app;
 }
+
+// Vercel detects src/app.js and expects an Express application as the default export.
+if (process.env.VERCEL === '1') assertEnv();
+export default createApp();

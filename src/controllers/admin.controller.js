@@ -48,7 +48,7 @@ export async function loyaltyHistory(req, res) {
   if (customerId) and.push({ customerId });
   if (action) and.push({ action });
   if (from || to) and.push({ createdAt: { ...(from && { gte: from }), ...(to && { lte: to }) } });
-  if (q) and.push({ OR: [{ invoiceNumber: { contains: q } }, { customer: { fullName: { contains: q } } }, { customer: { customerCode: { contains: q } } }, { customer: { mobile: { contains: q } } }] });
+  if (q) and.push({ OR: [{ invoiceNumber: { contains: q, mode: 'insensitive' } }, { customer: { fullName: { contains: q, mode: 'insensitive' } } }, { customer: { customerCode: { contains: q, mode: 'insensitive' } } }, { customer: { mobile: { contains: q, mode: 'insensitive' } } }] });
   const where = and.length ? { AND: and } : {};
   const [items, total] = await Promise.all([
     prisma.loyaltyTransaction.findMany({

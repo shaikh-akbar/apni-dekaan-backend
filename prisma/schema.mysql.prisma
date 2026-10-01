@@ -1,14 +1,13 @@
 // Apni Dukaan — Customer Loyalty & Rewards
-// Database: PostgreSQL / Supabase
+// Database: MySQL 8 / MariaDB 10.6+
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 // ─────────────────────────────── Access control ───────────────────────────────

@@ -5,12 +5,15 @@ import multer from 'multer';
 import { env } from '../config/env.js';
 import { AppError } from '../utils/AppError.js';
 
-fs.mkdirSync(env.uploadDir, { recursive: true });
-
 const EXT = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
 
 const storage = multer.diskStorage({
-  destination: env.uploadDir,
+  destination: (_req, _file, cb) => {
+    if (process.env.VERCEL === '1') {
+      return cb(new AppError(503, 'Image uploads require persistent object storage on this hosting platform'));
+    }
+    fs.mkdir(env.uploadDir, { recursive: true }, (err) => cb(err, env.uploadDir));
+  },
   // Random server-side filenames; the client-supplied name and extension are never used
   filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}${EXT[file.mimetype]}`),
 });

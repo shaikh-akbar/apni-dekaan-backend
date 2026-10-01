@@ -66,14 +66,14 @@ export async function updateCustomer(id, input, { admin, customerId, ip } = {}) 
 function customerWhere(f = {}) {
   const and = [];
   if (f.q) {
-    and.push({ OR: [{ fullName: { contains: f.q } }, { mobile: { contains: f.q } }, { customerCode: { contains: f.q } }, { email: { contains: f.q } }] });
+    and.push({ OR: [{ fullName: { contains: f.q, mode: 'insensitive' } }, { mobile: { contains: f.q, mode: 'insensitive' } }, { customerCode: { contains: f.q, mode: 'insensitive' } }, { email: { contains: f.q, mode: 'insensitive' } }] });
   }
   if (f.cardType) and.push({ cardType: f.cardType });
   if (f.minCount !== undefined || f.maxCount !== undefined) {
     and.push({ silverCount: { ...(f.minCount !== undefined && { gte: f.minCount }), ...(f.maxCount !== undefined && { lte: f.maxCount }) } });
   }
   if (f.from || f.to) and.push({ registrationDate: { ...(f.from && { gte: f.from }), ...(f.to && { lte: f.to }) } });
-  if (f.city) and.push({ city: { contains: f.city } });
+  if (f.city) and.push({ city: { contains: f.city, mode: 'insensitive' } });
   if (f.isActive !== undefined) and.push({ isActive: f.isActive });
   return and.length ? { AND: and } : {};
 }

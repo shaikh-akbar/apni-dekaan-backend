@@ -39,14 +39,14 @@ export async function adminDashboard({ days = 30 } = {}) {
       include: { customer: { select: { id: true, fullName: true, customerCode: true } }, createdBy: { select: { name: true } } },
     }),
     prisma.$queryRaw`
-      SELECT DATE_FORMAT(CONVERT_TZ(purchase_date, '+00:00', ${tz}), '%Y-%m-%d') AS day,
+      SELECT TO_CHAR(purchase_date + CAST(${tz} AS interval), 'YYYY-MM-DD') AS day,
              COUNT(*) AS purchases, COALESCE(SUM(final_amount), 0) AS revenue, COALESCE(SUM(silver_count_earned), 0) AS counts
       FROM customer_purchases
       WHERE status = 'ACTIVE' AND purchase_date >= ${since}
       GROUP BY day ORDER BY day`,
     prisma.customer.groupBy({ by: ['silverCount'], _count: { _all: true } }),
     prisma.$queryRaw`
-      SELECT DATE_FORMAT(CONVERT_TZ(registration_date, '+00:00', ${tz}), '%Y-%m-%d') AS day, COUNT(*) AS customers
+      SELECT TO_CHAR(registration_date + CAST(${tz} AS interval), 'YYYY-MM-DD') AS day, COUNT(*) AS customers
       FROM customers WHERE registration_date >= ${since}
       GROUP BY day ORDER BY day`,
     getSettings(),

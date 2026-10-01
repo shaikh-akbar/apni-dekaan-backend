@@ -49,7 +49,7 @@ async function assertInvoiceFree(tx, invoiceNumber, exceptId) {
  * see a stale snapshot under REPEATABLE READ. Lock order is always purchase → customer.
  */
 async function lockPurchaseAndCustomer(tx, id) {
-  const rows = await tx.$queryRaw`SELECT customer_id AS customerId FROM customer_purchases WHERE id = ${id} FOR UPDATE`;
+  const rows = await tx.$queryRaw`SELECT customer_id AS "customerId" FROM customer_purchases WHERE id = ${id} FOR UPDATE`;
   if (!rows.length) throw AppError.notFound('Purchase not found');
   return lockCustomer(tx, Number(rows[0].customerId));
 }
@@ -230,8 +230,8 @@ export async function cancelPurchase(id, reason, admin, ip) {
 
 export function purchaseWhere(f = {}) {
   const and = [];
-  if (f.q) and.push({ OR: [{ invoiceNumber: { contains: f.q } }, { customer: { fullName: { contains: f.q } } }, { customer: { mobile: { contains: f.q } } }, { customer: { customerCode: { contains: f.q } } }] });
-  if (f.invoice) and.push({ invoiceNumber: { contains: f.invoice } });
+  if (f.q) and.push({ OR: [{ invoiceNumber: { contains: f.q, mode: 'insensitive' } }, { customer: { fullName: { contains: f.q, mode: 'insensitive' } } }, { customer: { mobile: { contains: f.q, mode: 'insensitive' } } }, { customer: { customerCode: { contains: f.q, mode: 'insensitive' } } }] });
+  if (f.invoice) and.push({ invoiceNumber: { contains: f.invoice, mode: 'insensitive' } });
   if (f.customerId) and.push({ customerId: f.customerId });
   if (f.paymentMethod) and.push({ paymentMethod: f.paymentMethod });
   if (f.status) and.push({ status: f.status });

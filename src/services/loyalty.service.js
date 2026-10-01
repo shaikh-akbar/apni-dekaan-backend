@@ -114,7 +114,7 @@ export function buildJourney({ silverCount, cardType }, rewards, customerRewards
 /** Row-lock the customer for the remainder of the transaction. */
 export async function lockCustomer(tx, customerId) {
   const rows = await tx.$queryRaw`
-    SELECT id, silver_count AS silverCount, card_type AS cardType, is_active AS isActive
+    SELECT id, silver_count AS "silverCount", card_type AS "cardType", is_active AS "isActive"
     FROM customers WHERE id = ${customerId} FOR UPDATE`;
   if (!rows.length) throw AppError.notFound('Customer not found');
   const r = rows[0];
